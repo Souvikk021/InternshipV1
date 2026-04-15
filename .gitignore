@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+*.env.local
+*.env.production
+
+# Database files
+*.db
+*.db-journal
+*.sqlite
+
+# Build outputs
+dist/
+build/
+.vite/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Test coverage
+coverage/
+
+# Prisma generated
+# (keep schema and migrations, ignore generated client cache)
+backend/node_modules/
+
+# Temp files
+test-db.js
