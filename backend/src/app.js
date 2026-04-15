@@ -4,26 +4,27 @@ const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+const pinoHttp = require('pino-http');
 
 const authRoutes = require('./routes/v1/auth.routes');
 const taskRoutes = require('./routes/v1/task.routes');
 const adminRoutes = require('./routes/v1/admin.routes');
 const { errorHandler } = require('./middlewares/errorHandler');
 const { swaggerUi, specs } = require('./config/swagger');
+const logger = require('./config/logger');
 
 const app = express();
 
+// ─── HTTP Request Logging (pino) ──────────────────────────────────────────────
+app.use(pinoHttp({ logger, autoLogging: process.env.NODE_ENV !== 'test' }));
+
 // ─── Security Middleware ───────────────────────────────────────────────────────
-app.use(
-  helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-  })
-);
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-    credentials: true, // Allow cookies
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
@@ -31,14 +32,11 @@ app.use(
 
 // ─── Rate Limiting ─────────────────────────────────────────────────────────────
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'Too many requests from this IP, please try again after 15 minutes',
-  },
+  message: { success: false, message: 'Too many requests, please try again after 15 minutes' },
 });
 
 const globalLimiter = rateLimit({
@@ -68,6 +66,7 @@ app.get('/health', async (req, res) => {
     status: 'ok',
     uptime: `${Math.floor(process.uptime())}s`,
     db: dbStatus,
+    environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString(),
   });
 });
@@ -93,10 +92,10 @@ const PORT = process.env.PORT || 3000;
 
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`🚀 Server running at http://localhost:${PORT}`);
-    console.log(`📚 API Docs:     http://localhost:${PORT}/api-docs`);
-    console.log(`❤️  Health:       http://localhost:${PORT}/health`);
-    console.log(`🌍 Environment:  ${process.env.NODE_ENV || 'development'}`);
+    logger.info(`🚀 Server running at http://localhost:${PORT}`);
+    logger.info(`📚 API Docs:     http://localhost:${PORT}/api-docs`);
+    logger.info(`❤️  Health:       http://localhost:${PORT}/health`);
+    logger.info(`🌍 Environment:  ${process.env.NODE_ENV || 'development'}`);
   });
 }
 

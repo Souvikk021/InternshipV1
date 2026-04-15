@@ -1,8 +1,8 @@
 # Primetrade.ai Task Manager API
 
-> 🚀 Production-ready full-stack application — Backend Intern Assignment
+> 🚀 Production-ready full-stack application — Backend Developer Intern Assignment
 
-A secure, scalable REST API with JWT authentication, role-based access control (RBAC), and a React frontend dashboard.
+A secure, scalable REST API with JWT authentication, role-based access control (RBAC), PostgreSQL database, structured logging, and a React frontend dashboard.
 
 ---
 
@@ -32,63 +32,83 @@ A secure, scalable REST API with JWT authentication, role-based access control (
 |-------|-----------|
 | Runtime | Node.js 20+ LTS |
 | Framework | Express.js |
-| Database | SQLite + Prisma ORM (v7) |
-| Auth | JWT (HS256) + bcrypt |
-| Validation | Zod |
+| Database | **PostgreSQL** + Prisma ORM v7 |
+| Auth | JWT (HS256) + bcrypt (12 rounds) |
+| Validation | Zod (password complexity enforced) |
+| Logging | Pino + pino-http (structured JSON logs) |
 | Docs | Swagger UI (OpenAPI 3.0) |
 | Frontend | React + Vite |
 | Testing | Jest + Supertest |
+| Deployment | Docker + Docker Compose |
 
 ---
 
 ## ⚙️ Setup Instructions
 
-### Prerequisites
-- Node.js 18+ installed
-- Git
-
-### 1. Clone & Install
+### Option A — Docker (Recommended, Zero Setup)
 
 ```bash
-git clone <your-repo-url>
-cd Intership
+git clone https://github.com/Souvikk021/InternshipV1.git
+cd InternshipV1
+docker-compose up --build
 ```
 
-### 2. Backend Setup
+Runs PostgreSQL + Backend + Frontend automatically.
+- App: http://localhost:5173
+- API: http://localhost:3000
+- Docs: http://localhost:3000/api-docs
+
+---
+
+### Option B — Manual Setup
+
+#### Prerequisites
+- Node.js 18+
+- PostgreSQL 14+ running locally
+
+#### 1. Clone the repo
+
+```bash
+git clone https://github.com/Souvikk021/InternshipV1.git
+cd InternshipV1
+```
+
+#### 2. Backend Setup
 
 ```bash
 cd backend
 npm install
 ```
 
-Copy the example env:
+Copy and configure env:
 ```bash
 copy .env.example .env
 ```
 
-The defaults in `.env` work out of the box with SQLite.
-
-Apply the database schema:
-```bash
-node -e "const Database = require('better-sqlite3'); const fs = require('fs'); const path = require('path'); const db = new Database(path.resolve('prisma/dev.db')); const sql = fs.readFileSync('prisma/migrations/20260415160035_init/migration.sql', 'utf8'); db.exec(sql); db.close(); console.log('Done');"
+Edit `.env` with your PostgreSQL credentials:
+```env
+DATABASE_URL="postgresql://postgres:password@localhost:5432/primetrade_db?schema=public"
+JWT_ACCESS_SECRET="your_strong_secret_min_32_chars"
+JWT_REFRESH_SECRET="your_refresh_secret_min_32_chars"
+PORT=3000
+NODE_ENV=development
+CORS_ORIGIN=http://localhost:5173
+LOG_LEVEL=info
 ```
 
-Or run the Prisma migration (requires TypeScript setup):
+Run migrations & seed:
 ```bash
+npx prisma migrate dev --name init
 npx prisma generate
-```
-
-Seed the database:
-```bash
 node prisma/seed.js
 ```
 
-Start the backend:
+Start backend:
 ```bash
 npm run dev
 ```
 
-### 3. Frontend Setup
+#### 3. Frontend Setup
 
 ```bash
 cd ../frontend
@@ -102,30 +122,30 @@ Open http://localhost:5173
 
 ## 🔐 API Endpoints
 
-### Auth
+### Auth (`/api/v1/auth`)
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | /api/v1/auth/register | None | Register new user |
-| POST | /api/v1/auth/login | None | Login + get JWT |
-| POST | /api/v1/auth/refresh | Cookie | Refresh access token |
-| POST | /api/v1/auth/logout | None | Revoke refresh token |
-| GET | /api/v1/auth/me | Bearer | Get current user |
+| POST | /register | None | Register new user |
+| POST | /login | None | Login + get JWT |
+| POST | /refresh | Cookie | Refresh access token (rotation) |
+| POST | /logout | None | Revoke refresh token |
+| GET | /me | Bearer | Get current user info |
 
-### Tasks
+### Tasks (`/api/v1/tasks`)
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | /api/v1/tasks | Bearer | List tasks (own/all for admin) |
-| POST | /api/v1/tasks | Bearer | Create task |
-| GET | /api/v1/tasks/:id | Bearer | Get task |
-| PUT | /api/v1/tasks/:id | Bearer | Update task |
-| DELETE | /api/v1/tasks/:id | Bearer | Delete task |
+| GET | / | Bearer | List tasks (own/all for admin) + pagination + filter |
+| POST | / | Bearer | Create task |
+| GET | /:id | Bearer | Get task (ownership check) |
+| PUT | /:id | Bearer | Update task (ownership/admin) |
+| DELETE | /:id | Bearer | Delete task (ownership/admin) |
 
-### Admin (ADMIN role required)
+### Admin (`/api/v1/admin`) — ADMIN role required
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | /api/v1/admin/users | Bearer + ADMIN | List all users |
-| DELETE | /api/v1/admin/users/:id | Bearer + ADMIN | Delete user |
-| PATCH | /api/v1/admin/users/:id/role | Bearer + ADMIN | Update user role |
+| GET | /users | Bearer + ADMIN | List all users with task counts |
+| DELETE | /users/:id | Bearer + ADMIN | Delete user |
+| PATCH | /users/:id/role | Bearer + ADMIN | Update user role |
 
 ---
 
@@ -136,12 +156,12 @@ cd backend
 npm test
 ```
 
-Tests cover:
-- Registration, login, invalid credentials
-- Protected route access
-- Task CRUD with ownership checks
-- RBAC enforcement (admin vs user)
-- Token expiry handling
+Covers:
+- ✅ Registration, login, invalid credentials
+- ✅ Protected route access (401 without token)
+- ✅ Task CRUD with ownership checks
+- ✅ RBAC: admin routes return 403 for regular users
+- ✅ Token expiry and invalid token handling
 
 ---
 
@@ -150,81 +170,116 @@ Tests cover:
 | Measure | Implementation |
 |---------|---------------|
 | Password hashing | bcrypt with 12 salt rounds |
-| JWT | HS256 with short-lived access tokens (15m) + refresh tokens (7d) |
-| Token storage | Access token in memory; refresh token in httpOnly cookie |
-| Input validation | Zod schemas on all endpoints |
-| Rate limiting | 20 req/15min on auth; 200 req/15min globally |
-| IDOR prevention | All queries scoped to `req.user.id` for non-admins |
-| Security headers | Helmet.js |
-| CORS | Configured for frontend origin only |
+| Password complexity | Zod: min 8 chars + uppercase + number + special char |
+| JWT | HS256, access tokens (15m) + refresh tokens (7d) |
+| Token storage | Access token in memory; refresh token in httpOnly + Secure cookie |
 | Refresh token rotation | Each refresh invalidates old token in DB |
+| Input validation | Zod schemas on ALL endpoints |
+| Rate limiting | 20 req/15min on auth; 200 req/15min globally |
+| IDOR prevention | ALL queries scoped to `req.user.id` for non-admins |
+| Security headers | helmet.js |
+| CORS | Configured for frontend origin only |
+| Logging | pino structured JSON logs (request + response) |
 
 ---
 
 ## 📐 Architecture & Scalability
 
-This architecture supports horizontal scaling through **stateless JWT authentication** — no server-side session state means any instance can verify tokens independently.
+This architecture supports **horizontal scaling** through stateless JWT authentication. No server-side session state means any instance can verify tokens independently.
 
-**For production scaling:**
-- **Redis** for token blocklist (instant logout) and rate limiting across instances
-- **Connection pooling** via PgBouncer / native PostgreSQL pooling
-- **Docker + Kubernetes** for zero-downtime deployments with load balancing
-- **Microservices extraction**: Auth and Tasks can be split into separate services sharing the same JWT verification logic, with an API Gateway routing requests
-- **PostgreSQL** swap is trivial — just change `schema.prisma` provider and `DATABASE_URL`
-- **Async job queue** (BullMQ + Redis) for notifications and background tasks
+```
+┌─────────────────────────────────────────────────────┐
+│              Load Balancer (nginx/AWS ALB)            │
+└────────────────────┬────────────────────────────────┘
+                     │
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+   [API Server]  [API Server]  [API Server]   ← Stateless (JWT)
+        │            │            │
+        └────────────┼────────────┘
+                     │
+        ┌────────────┼────────────┐
+        ▼                         ▼
+  [PostgreSQL]              [Redis Cache]
+  Primary + Replicas        Token blocklist
+                            Rate limiting
+                            Session cache
+```
 
-The layered architecture (routes → controllers → services → DB) keeps concerns separated, making each layer independently testable and replaceable.
+**Production scaling roadmap:**
+- **Redis**: Token blocklist for instant logout, shared rate limiting across instances, response caching
+- **PostgreSQL**: Read replicas for query scaling, PgBouncer for connection pooling
+- **Docker + Kubernetes**: Zero-downtime rolling deployments, auto-scaling pods
+- **Microservices**: Auth and Tasks can be extracted as independent services sharing the same JWT verification, with an API Gateway routing requests
+- **Message Queue**: BullMQ + Redis for async notifications and background jobs
+- **Monitoring**: Pino logs → Datadog/ELK Stack for observability
 
 ---
 
 ## 📁 Project Structure
 
 ```
-backend/
-├── prisma/
-│   ├── schema.prisma    # DB models + enums
-│   ├── seed.js          # Demo data seed
-│   └── migrations/      # DB migration files
-├── src/
-│   ├── config/          # DB, Swagger config
-│   ├── controllers/     # HTTP layer (thin wrappers)
-│   ├── middlewares/     # Auth, validate, errorHandler
-│   ├── routes/v1/       # API routes with Swagger JSDoc
-│   ├── services/        # Business logic
-│   ├── utils/           # JWT, password, response helpers
-│   ├── validators/      # Zod schemas
-│   └── app.js           # Express app + middleware chain
-└── tests/               # Jest + Supertest integration tests
-
-frontend/
-├── src/
-│   ├── components/      # Reusable UI components
-│   ├── contexts/        # AuthContext (global auth state)
-│   ├── pages/           # LoginPage, DashboardPage, AdminPage
-│   ├── services/        # API, auth, task service wrappers
-│   └── App.jsx          # Root with routing + auth guards
-└── index.html
+InternshipV1/
+├── docker-compose.yml       # One-command full-stack deployment
+├── README.md
+│
+├── backend/
+│   ├── Dockerfile
+│   ├── prisma/
+│   │   ├── schema.prisma    # User + Task + RefreshToken models (PostgreSQL)
+│   │   ├── seed.js          # Demo data seeding
+│   │   └── migrations/      # Prisma migration files
+│   ├── src/
+│   │   ├── config/
+│   │   │   ├── db.js        # Prisma client
+│   │   │   ├── logger.js    # Pino structured logger
+│   │   │   └── swagger.js   # OpenAPI 3.0 spec
+│   │   ├── controllers/     # HTTP handlers (thin layer)
+│   │   ├── middlewares/     # authenticate, authorize, validate, errorHandler
+│   │   ├── routes/v1/       # Versioned routes with Swagger JSDoc
+│   │   ├── services/        # Business logic (auth, tasks)
+│   │   ├── utils/           # jwt.js, password.js, response.js
+│   │   ├── validators/      # Zod schemas (password complexity enforced)
+│   │   └── app.js           # Express app
+│   └── tests/               # Jest + Supertest integration tests
+│
+└── frontend/
+    ├── Dockerfile
+    ├── nginx.conf
+    └── src/
+        ├── components/      # Navbar, TaskCard, TaskModal, Alert, PrivateRoute
+        ├── contexts/        # AuthContext (in-memory tokens, NOT localStorage)
+        ├── pages/           # LoginPage, DashboardPage, AdminPage
+        ├── services/        # api.js (interceptors), authService, taskService
+        └── App.jsx          # Routes + auth guards
 ```
 
 ---
 
 ## 🚀 Deployment
 
-### Backend → Render.com
-1. Connect GitHub repo
-2. Set build command: `npm install`
-3. Set start command: `node src/app.js`
-4. Add env vars: `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `DATABASE_URL`, `NODE_ENV=production`
+### Render.com (Backend)
+1. Connect GitHub repo, set root to `backend/`
+2. Build: `npm install && npx prisma generate`
+3. Start: `npx prisma migrate deploy && node src/app.js`
+4. Add env vars: `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `NODE_ENV=production`
 
-### Frontend → Vercel
+### Vercel (Frontend)
 1. Connect GitHub repo, set root to `frontend/`
-2. Build command: `npm run build`
-3. Update `VITE_API_URL` env var to your Render backend URL
+2. Build: `npm run build` → Output: `dist/`
+3. Add `VITE_API_URL` pointing to your Render backend URL
+
+### Docker (Self-hosted)
+```bash
+docker-compose up --build -d
+```
 
 ---
 
 ## 📚 Interactive API Docs
 
-Visit **http://localhost:3000/api-docs** to explore all endpoints with Swagger UI.
+Visit **http://localhost:3000/api-docs**
 
-Click **Authorize** and paste your access token to test protected routes directly.
+1. Click **Authorize** 🔒
+2. Paste your access token from login response
+3. Test any endpoint directly from the browser
