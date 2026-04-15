@@ -9,7 +9,8 @@ const validate = (schema) => {
     const result = schema.safeParse(req.body);
 
     if (!result.success) {
-      const errors = result.error.errors.map((e) => ({
+      // Zod v4 uses .issues (previously .errors)
+      const errors = (result.error.issues || result.error.errors || []).map((e) => ({
         field: e.path.join('.'),
         message: e.message,
       }));

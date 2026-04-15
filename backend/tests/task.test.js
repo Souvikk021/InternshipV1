@@ -9,17 +9,17 @@ beforeAll(async () => {
   await prisma.task.deleteMany();
   await prisma.user.deleteMany();
 
-  // Create regular user
+  // Create regular user (password meets complexity)
   const userReg = await request(app)
     .post('/api/v1/auth/register')
-    .send({ email: 'user@test.com', password: 'UserPass123' });
+    .send({ email: 'user@test.com', password: 'UserPass@123' });
   userToken = userReg.body.data.accessToken;
   userId = userReg.body.data.user.id;
 
   // Create admin user
   const adminReg = await request(app)
     .post('/api/v1/auth/register')
-    .send({ email: 'admin@test.com', password: 'AdminPass123' });
+    .send({ email: 'admin@test.com', password: 'AdminPass@123' });
   adminId = adminReg.body.data.user.id;
 
   // Promote to admin directly
@@ -27,7 +27,7 @@ beforeAll(async () => {
 
   const adminLogin = await request(app)
     .post('/api/v1/auth/login')
-    .send({ email: 'admin@test.com', password: 'AdminPass123' });
+    .send({ email: 'admin@test.com', password: 'AdminPass@123' });
   adminToken = adminLogin.body.data.accessToken;
 });
 
@@ -55,10 +55,7 @@ describe('Task API', () => {
     });
 
     it('should return 401 without auth', async () => {
-      const res = await request(app)
-        .post('/api/v1/tasks')
-        .send({ title: 'No auth task' });
-
+      const res = await request(app).post('/api/v1/tasks').send({ title: 'No auth task' });
       expect(res.status).toBe(401);
     });
 
@@ -67,17 +64,15 @@ describe('Task API', () => {
         .post('/api/v1/tasks')
         .set('Authorization', `Bearer ${userToken}`)
         .send({ description: 'No title' });
-
       expect(res.status).toBe(400);
     });
   });
 
   describe('GET /api/v1/tasks', () => {
-    it('should return only the authenticated user\'s tasks', async () => {
+    it("should return only the authenticated user's tasks", async () => {
       const res = await request(app)
         .get('/api/v1/tasks')
         .set('Authorization', `Bearer ${userToken}`);
-
       expect(res.status).toBe(200);
       expect(res.body.data.tasks.every((t) => t.userId === userId)).toBe(true);
     });
@@ -86,9 +81,7 @@ describe('Task API', () => {
       const res = await request(app)
         .get('/api/v1/tasks')
         .set('Authorization', `Bearer ${adminToken}`);
-
       expect(res.status).toBe(200);
-      // Admin sees all tasks
       expect(Array.isArray(res.body.data.tasks)).toBe(true);
     });
   });
@@ -98,16 +91,14 @@ describe('Task API', () => {
       const res = await request(app)
         .get(`/api/v1/tasks/${taskId}`)
         .set('Authorization', `Bearer ${userToken}`);
-
       expect(res.status).toBe(200);
       expect(res.body.data.task.id).toBe(taskId);
     });
 
     it('should return 404 for non-existent task', async () => {
       const res = await request(app)
-        .get('/api/v1/tasks/non-existent-id')
+        .get('/api/v1/tasks/00000000-0000-0000-0000-000000000000')
         .set('Authorization', `Bearer ${userToken}`);
-
       expect(res.status).toBe(404);
     });
   });
@@ -118,18 +109,15 @@ describe('Task API', () => {
         .put(`/api/v1/tasks/${taskId}`)
         .set('Authorization', `Bearer ${userToken}`)
         .send({ status: 'IN_PROGRESS', title: 'Updated Title' });
-
       expect(res.status).toBe(200);
       expect(res.body.data.task.status).toBe('IN_PROGRESS');
     });
 
-    it('should return 403 when other user tries to update', async () => {
+    it('should allow admin to update any task', async () => {
       const res = await request(app)
         .put(`/api/v1/tasks/${taskId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ title: 'Admin override' });
-
-      // Admin CAN update (as admin role)
+        .send({ title: 'Admin updated' });
       expect(res.status).toBe(200);
     });
   });
@@ -139,7 +127,6 @@ describe('Task API', () => {
       const res = await request(app)
         .delete(`/api/v1/tasks/${taskId}`)
         .set('Authorization', `Bearer ${userToken}`);
-
       expect(res.status).toBe(200);
     });
 
@@ -147,7 +134,6 @@ describe('Task API', () => {
       const res = await request(app)
         .get(`/api/v1/tasks/${taskId}`)
         .set('Authorization', `Bearer ${userToken}`);
-
       expect(res.status).toBe(404);
     });
   });
@@ -157,7 +143,6 @@ describe('Task API', () => {
       const res = await request(app)
         .get('/api/v1/admin/users')
         .set('Authorization', `Bearer ${adminToken}`);
-
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.data.users)).toBe(true);
     });
@@ -166,7 +151,6 @@ describe('Task API', () => {
       const res = await request(app)
         .get('/api/v1/admin/users')
         .set('Authorization', `Bearer ${userToken}`);
-
       expect(res.status).toBe(403);
     });
   });

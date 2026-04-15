@@ -2,14 +2,25 @@ const prisma = require('../config/db');
 const { hashPassword, verifyPassword } = require('../utils/password');
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require('../utils/jwt');
 
+const REFRESH_EXPIRES_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// Helper: store refresh token safely (upsert avoids unique constraint in fast test runs)
+const storeRefreshToken = async (token, userId) => {
+  await prisma.refreshToken.upsert({
+    where: { token },
+    update: { expiresAt: new Date(Date.now() + REFRESH_EXPIRES_MS) },
+    create: {
+      token,
+      userId,
+      expiresAt: new Date(Date.now() + REFRESH_EXPIRES_MS),
+    },
+  });
+};
+
 /**
  * Register a new user
- * @param {string} email
- * @param {string} password
- * @returns {{ user, accessToken, refreshToken }}
  */
 const registerUser = async (email, password) => {
-  // Check if user already exists
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     const err = new Error('Email is already registered');
@@ -18,7 +29,6 @@ const registerUser = async (email, password) => {
   }
 
   const passwordHash = await hashPassword(password);
-
   const user = await prisma.user.create({
     data: { email, passwordHash },
     select: { id: true, email: true, role: true, createdAt: true },
@@ -28,27 +38,15 @@ const registerUser = async (email, password) => {
   const accessToken = generateAccessToken(tokenPayload);
   const refreshToken = generateRefreshToken(tokenPayload);
 
-  // Store refresh token in DB
-  await prisma.refreshToken.create({
-    data: {
-      token: refreshToken,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-    },
-  });
-
+  await storeRefreshToken(refreshToken, user.id);
   return { user, accessToken, refreshToken };
 };
 
 /**
  * Login an existing user
- * @param {string} email
- * @param {string} password
- * @returns {{ user, accessToken, refreshToken }}
  */
 const loginUser = async (email, password) => {
   const user = await prisma.user.findUnique({ where: { email } });
-
   if (!user) {
     const err = new Error('Invalid email or password');
     err.statusCode = 401;
@@ -66,14 +64,7 @@ const loginUser = async (email, password) => {
   const accessToken = generateAccessToken(tokenPayload);
   const refreshToken = generateRefreshToken(tokenPayload);
 
-  // Store new refresh token
-  await prisma.refreshToken.create({
-    data: {
-      token: refreshToken,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    },
-  });
+  await storeRefreshToken(refreshToken, user.id);
 
   const safeUser = { id: user.id, email: user.email, role: user.role, createdAt: user.createdAt };
   return { user: safeUser, accessToken, refreshToken };
@@ -81,11 +72,8 @@ const loginUser = async (email, password) => {
 
 /**
  * Rotate refresh token (refresh token rotation pattern)
- * @param {string} token - Existing refresh token
- * @returns {{ accessToken, refreshToken }}
  */
 const refreshTokens = async (token) => {
-  // Verify token signature
   let decoded;
   try {
     decoded = verifyRefreshToken(token);
@@ -95,7 +83,6 @@ const refreshTokens = async (token) => {
     throw err;
   }
 
-  // Check DB for token (rotation: invalidate once used)
   const stored = await prisma.refreshToken.findUnique({ where: { token } });
   if (!stored || stored.expiresAt < new Date()) {
     const err = new Error('Refresh token not found or expired');
@@ -103,10 +90,9 @@ const refreshTokens = async (token) => {
     throw err;
   }
 
-  // Delete old token (rotation)
+  // Rotate: delete old token
   await prisma.refreshToken.delete({ where: { token } });
 
-  // Fetch fresh user data
   const user = await prisma.user.findUnique({
     where: { id: decoded.id },
     select: { id: true, email: true, role: true },
@@ -122,21 +108,12 @@ const refreshTokens = async (token) => {
   const accessToken = generateAccessToken(payload);
   const refreshToken = generateRefreshToken(payload);
 
-  // Store new refresh token
-  await prisma.refreshToken.create({
-    data: {
-      token: refreshToken,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    },
-  });
-
+  await storeRefreshToken(refreshToken, user.id);
   return { accessToken, refreshToken };
 };
 
 /**
  * Logout: Revoke the refresh token
- * @param {string} token
  */
 const logoutUser = async (token) => {
   if (!token) return;

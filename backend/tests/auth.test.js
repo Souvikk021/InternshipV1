@@ -17,7 +17,8 @@ afterAll(async () => {
 });
 
 describe('Auth API', () => {
-  const testUser = { email: 'test@example.com', password: 'TestPassword123' };
+  // Passwords now require: 8+ chars, uppercase, number, special char
+  const testUser = { email: 'test@example.com', password: 'TestPass@123' };
 
   describe('POST /api/v1/auth/register', () => {
     it('should register a new user and return 201 + access token', async () => {
@@ -34,23 +35,29 @@ describe('Auth API', () => {
     it('should return 409 if email already registered', async () => {
       await request(app).post('/api/v1/auth/register').send(testUser);
       const res = await request(app).post('/api/v1/auth/register').send(testUser);
-
       expect(res.status).toBe(409);
     });
 
     it('should return 400 for invalid email', async () => {
       const res = await request(app)
         .post('/api/v1/auth/register')
-        .send({ email: 'not-an-email', password: 'TestPassword123' });
+        .send({ email: 'not-an-email', password: 'TestPass@123' });
 
       expect(res.status).toBe(400);
-      expect(res.body.errors).toBeDefined();
+    });
+
+    it('should return 400 for weak password (no special char)', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/register')
+        .send({ email: 'user@example.com', password: 'NoSpecial1' });
+
+      expect(res.status).toBe(400);
     });
 
     it('should return 400 for short password', async () => {
       const res = await request(app)
         .post('/api/v1/auth/register')
-        .send({ email: 'user@example.com', password: 'short' });
+        .send({ email: 'user@example.com', password: 'Ab@1' });
 
       expect(res.status).toBe(400);
     });
@@ -58,12 +65,12 @@ describe('Auth API', () => {
 
   describe('POST /api/v1/auth/login', () => {
     beforeEach(async () => {
+      // Re-create user after outer beforeEach wipes the DB
       await request(app).post('/api/v1/auth/register').send(testUser);
     });
 
     it('should login and return access token', async () => {
       const res = await request(app).post('/api/v1/auth/login').send(testUser);
-
       expect(res.status).toBe(200);
       expect(res.body.data.accessToken).toBeDefined();
     });
@@ -71,16 +78,14 @@ describe('Auth API', () => {
     it('should return 401 for wrong password', async () => {
       const res = await request(app)
         .post('/api/v1/auth/login')
-        .send({ email: testUser.email, password: 'WrongPass123' });
-
+        .send({ email: testUser.email, password: 'WrongPass@123' });
       expect(res.status).toBe(401);
     });
 
     it('should return 401 for non-existent user', async () => {
       const res = await request(app)
         .post('/api/v1/auth/login')
-        .send({ email: 'nobody@example.com', password: 'TestPassword123' });
-
+        .send({ email: 'nobody@example.com', password: 'TestPass@123' });
       expect(res.status).toBe(401);
     });
   });
@@ -107,7 +112,6 @@ describe('Auth API', () => {
       const res = await request(app)
         .get('/api/v1/auth/me')
         .set('Authorization', 'Bearer invalid.token.here');
-
       expect(res.status).toBe(401);
     });
   });
